@@ -14,7 +14,7 @@ class CodeExplanationLLMSchema(BaseModel):
     
     model_config = ConfigDict(from_attributes=True)
     
-
+    
 class DisplayCodeExplanationSchema(BaseModel):
     id: str 
     code_snippet: str 
@@ -23,4 +23,20 @@ class DisplayCodeExplanationSchema(BaseModel):
     date_created: datetime 
     
     model_config = ConfigDict(from_attributes=True)
+    
+    
+#####################################################################################################################################
+class DisplayPseudoCodeToCodeSchema(BaseModel):
+    pseudo_code: str 
+    actual_code: str 
+    
+    model_config = ConfigDict(from_attributes=True)
+    
+
+class CreatePseudoCodeToCodeSchema(BaseModel):
+    pseudo_code: str 
+    
+    model_config = ConfigDict(from_attributes=True)
+
+######################################################################################################################################
     

@@ -31,11 +31,11 @@ GEMINI_SYSTEM_INSTRUCTION = """
 
     Return the response ONLY in JSON format with the following structure:
 
-    {
-        "code_snippet": "original code snippet provided by user",
-        "explanation": "clear explanation of what the code does, why it works, and one alternative approach",
-        "title": "generate a short, descriptive title that helps the user recognize the snippet later."
-    }
+    
+    "code_snippet": "original code snippet provided by user",
+    "explanation": "clear explanation of what the code does, why it works, and one alternative approach",
+    "title": "generate a short, descriptive title that helps the user recognize the snippet later."
+    
 
     Do not include any extra text outside the JSON.
 """
@@ -134,82 +134,6 @@ async def delete_code_explanation(
         print(f"There was an error trying to delete the code explanation: {str(e)}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Unable to delete this code snippet")
     
-    
-
-        
-# async def stream_code_explanation(
-#     db: AsyncSession,
-#     snippet_data: UploadCodeSnippetSchema
-# ):
-
-#     actual_code_snippet = snippet_data.code_snippet
-#     full_response = ""
-
-#     try:
-
-#         def run_stream():
-#             return gemini_api_client.models.generate_content_stream(
-#                 model="gemini-2.5-flash",
-#                 contents=f"""
-#                     Explain the following code snippet in detail.
-
-#                     Return JSON with fields:
-#                         title
-#                         code_snippet
-#                         explanation
-
-#                     Code:
-#                         {actual_code_snippet}
-#                 """,
-#                 config=types.GenerateContentConfig(
-#                     system_instruction=GEMINI_SYSTEM_INSTRUCTION,
-#                     response_mime_type="application/json"
-#                 )
-#             )
-
-#         response = await asyncio.to_thread(run_stream)
-
-#         # Collect JSON from Gemini
-#         for chunk in response:
-
-#             if chunk.text:
-#                 full_response += chunk.text
-#                 await asyncio.sleep(0)
-
-#         # Clean potential markdown
-#         cleaned = re.sub(r"```json|```", "", full_response).strip()
-
-#         parsed_data = CodeExplanationLLMSchema.model_validate(
-#             json.loads(cleaned)
-#         )
-
-#         explanation_text = parsed_data.explanation
-            
-#         for word in explanation_text.split(" "):
-#             yield f"data: {word} "
-#             await asyncio.sleep(0.01)
-
-#         # Save to DB
-#         new_snippet = CodeExplainerModel(
-#             code_snippet=parsed_data.code_snippet,
-#             explanation=parsed_data.explanation,
-#             title=parsed_data.title
-#         )
-
-#         db.add(new_snippet)
-
-#         await db.commit()
-
-#         await db.refresh(new_snippet)
-
-#         yield "data: [DONE]\n\n"
-
-#     except Exception as e:
-
-#         await db.rollback()
-
-#         yield f"data: ERROR: {str(e)}\n\n"
-
 
 async def stream_code_explanation(
     db: AsyncSession,
