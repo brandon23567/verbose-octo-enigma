@@ -6,6 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from dotenv import load_dotenv
 import os 
 import asyncio
+from google import genai
+from google.genai import types
+from sqlalchemy import select, and_, or_, delete
 
 
 load_dotenv()
@@ -28,8 +31,9 @@ GEMINI_SYSTEM_INSTRUCTION = """
     Return the response ONLY in JSON format with the following structure:
 
     "pseudo_code": "original pseudo_code provided by user",
-    "actual_code": "clear explanation of what the code does, why it works, and one alternative approach",
+    "code": "clear explanation of what the code does, why it works, and one alternative approach",
     "title": "generate a short, descriptive title that helps the user recognize the snippet later."
+    "programming_language": "Python is the default language and all code snippet should be generated in python"
 
     Do not include any extra text outside the JSON.
 """
@@ -47,9 +51,68 @@ async def upload_pseudo_code_snippet(
         response = await asyncio.to_thread(
             gemini_api_client.models.generate_content,
             model="gemini-2.5-flash",
-            contents=f"Take the provided pseudo code and generate python code from this: \n\n {actual_pseudo_snippet}"
+            contents=f"Take the provided pseudo code and generate python code from this: \n\n {actual_pseudo_snippet}",
+            config=types.GenerateContentConfig(
+                system_instruction=GEMINI_SYSTEM_INSTRUCTION,
+                response_schema=CodeFromPseudoCodeLLMResponseSchema
+            )
         )
         
+        parsed_data = CodeFromPseudoCodeLLMResponseSchema.model_validate(response.parsed)
+        
+        new_code_output = PseudoCodeToCodeModel(
+            title=parsed_data.title,
+            pseudo_code=parsed_data.pseudo_code,
+            actual_code=parsed_data.code
+        )
+        
+        db.save(new_code_output)
+        await db.commit()
+        await db.refresh(new_code_output)
+        
+        return new_code_output
+        
     except Exception as e:
+        await db.rollback()
         print(f"There was an error trying to generate the code for this: {str(e)}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Unable to generate the code requested")
+    
+    
+
+async def get_all_previous_pseudo_code_snippets(
+    db: AsyncSession
+):
+    try:
+        result = await db.execute(select(PseudoCodeToCodeModel))
+        snippets = await result.scalars().first()
+        
+        return snippets
+        
+    except Exception as e:
+        print(f"There was an error trying to get previous pseudo code snippets: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="There was an error trying to get the snippets of pseudo code"
+        )
+        
+        
+
+async def get_specific_pseudo_code_snippet(
+    snippet_id: str,
+    db: AsyncSession
+):
+    query = await db.execute(select(PseudoCodeToCodeModel).where(PseudoCodeToCodeModel.id == snippet_id))
+    requested_snippet = await query.scalar_one_or_none()
+    
+    if not requested_snippet:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Snippet not found")
+    
+    try:
+        return requested_snippet
+        
+    except Exception as e:
+        print(f"There was an error getting this specific pseudo code snippet: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to fetch pseudo code snippet"
+        )

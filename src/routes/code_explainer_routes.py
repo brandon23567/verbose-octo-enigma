@@ -5,6 +5,7 @@ from ..crud.code_explainer_crud import *
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 from fastapi.responses import StreamingResponse
+from ..crud.pseudo_code_to_code_crud import *
 
 router = APIRouter(
     prefix="/analyzer",
@@ -69,3 +70,32 @@ async def upload_new_code_snippet_stream(
     )
 
     return StreamingResponse(generator, media_type="text/event-stream")
+
+
+
+@router.post("/upload_pseudo_code", response_model=CodeFromPseudoCodeLLMResponseSchema, status_code=status.HTTP_201_CREATED)
+async def upload_pseudo_code_route(
+    snippet_data: CreatePseudoCodeToCodeSchema,
+    db: AsyncSession = Depends(get_db),
+    
+):
+    return await upload_pseudo_code_snippet(
+        db=db,
+        snippet_data=snippet_data
+    )
+    
+    
+@router.get("/pseudo_code_snippets", response_model=List[CodeFromPseudoCodeLLMResponseSchema], status_code=status.HTTP_200_OK)
+async def get_pseudo_code_snippets_route(
+    db: AsyncSession = Depends(get_db)
+):
+    return await get_all_previous_pseudo_code_snippets(db=db)
+
+
+
+@router.get("/pseudo_code_snippet/{snippet_id}", status_code=status.HTTP_200_OK, response_model=CodeFromPseudoCodeLLMResponseSchema)
+async def get_single_pseudo_code_snippet_route(
+    snippet_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    return await get_specific_pseudo_code_snippet(snippet_id=snippet_id, db=db)

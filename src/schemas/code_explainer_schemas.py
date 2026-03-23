@@ -37,6 +37,15 @@ class CreatePseudoCodeToCodeSchema(BaseModel):
     pseudo_code: str 
     
     model_config = ConfigDict(from_attributes=True)
+    
+    
+class CodeFromPseudoCodeLLMResponseSchema(BaseModel):
+    title: str
+    pseudo_code: str
+    code: str
+    programming_language: str = Field(None, default="Python")
+    
+    model_config = ConfigDict(from_attributes=True) 
 
 ######################################################################################################################################
     
