@@ -9,7 +9,8 @@ import asyncio
 from google import genai
 from google.genai import types
 from sqlalchemy import select, and_, or_, delete
-
+import re
+import json 
 
 load_dotenv()
 
@@ -23,6 +24,13 @@ gemini_api_client = genai.Client(
 )
 
 
+def clean_llm_output(text: str) -> str:
+    # Remove ```json or ``` wrappers
+    text = re.sub(r"```json\s*", "", text)
+    text = re.sub(r"```", "", text)
+    return text.strip()
+
+
 GEMINI_SYSTEM_INSTRUCTION = """
     You are a senior software engineer with 20 years experience.
 
@@ -31,8 +39,8 @@ GEMINI_SYSTEM_INSTRUCTION = """
     Return the response ONLY in JSON format with the following structure:
 
     "pseudo_code": "original pseudo_code provided by user",
-    "code": "clear explanation of what the code does, why it works, and one alternative approach",
-    "title": "generate a short, descriptive title that helps the user recognize the snippet later."
+    "actual_code": "Implementation of the pseudo code in python",
+    "title": "generate a short, descriptive title that helps the user recognize the snippet later.",
     "programming_language": "Python is the default language and all code snippet should be generated in python"
 
     Do not include any extra text outside the JSON.
@@ -44,7 +52,6 @@ async def upload_pseudo_code_snippet(
     snippet_data: CreatePseudoCodeToCodeSchema
 ):
     try:
-        print("")
         
         actual_pseudo_snippet = snippet_data.pseudo_code
         
@@ -58,12 +65,28 @@ async def upload_pseudo_code_snippet(
             )
         )
         
-        parsed_data = CodeFromPseudoCodeLLMResponseSchema.model_validate(response.parsed)
+        print("RAW RESPONSE:", response)
+        print("TEXT:", getattr(response, "text", None))
+        print("PARSED:", response.parsed)
+        
+        # parsed_data = CodeFromPseudoCodeLLMResponseSchema.model_validate(response.parsed)
+        
+        if response.parsed is None:
+            raise ValueError(f"Model did not return valid structured output. Raw: {response.text}")
+        
+        
+        cleaned = clean_llm_output(response.text)
+
+        try:
+            parsed_json = json.loads(cleaned)
+            parsed_data = CodeFromPseudoCodeLLMResponseSchema(**parsed_json)
+        except Exception as e:
+            raise ValueError(f"Failed to parse LLM output: {cleaned}")
         
         new_code_output = PseudoCodeToCodeModel(
             title=parsed_data.title,
             pseudo_code=parsed_data.pseudo_code,
-            actual_code=parsed_data.code
+            actual_code=parsed_data.actual_code
         )
         
         db.save(new_code_output)
