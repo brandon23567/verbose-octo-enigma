@@ -99,3 +99,15 @@ async def get_single_pseudo_code_snippet_route(
     db: AsyncSession = Depends(get_db)
 ):
     return await get_specific_pseudo_code_snippet(snippet_id=snippet_id, db=db)
+
+@router.post("/stream_pseudo_code")
+async def upload_new_pseudo_code_stream(
+    snippet_data: CreatePseudoCodeToCodeSchema,
+    db: AsyncSession = Depends(get_db)
+):
+    generator = stream_pseudo_code_to_code(
+        db=db,
+        snippet_data=snippet_data
+    )
+
+    return StreamingResponse(generator, media_type="text/event-stream")

@@ -89,7 +89,7 @@ async def upload_pseudo_code_snippet(
             actual_code=parsed_data.actual_code
         )
         
-        db.save(new_code_output)
+        db.add(new_code_output)
         await db.commit()
         await db.refresh(new_code_output)
         
@@ -107,7 +107,7 @@ async def get_all_previous_pseudo_code_snippets(
 ):
     try:
         result = await db.execute(select(PseudoCodeToCodeModel))
-        snippets = await result.scalars().first()
+        snippets = result.scalars().all()
         
         return snippets
         
@@ -139,3 +139,77 @@ async def get_specific_pseudo_code_snippet(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Unable to fetch pseudo code snippet"
         )
+
+async def stream_pseudo_code_to_code(
+    db: AsyncSession,
+    snippet_data: CreatePseudoCodeToCodeSchema
+):
+    actual_pseudo_snippet = snippet_data.pseudo_code
+    full_response = ""
+
+    try:
+        def run_stream():
+            return gemini_api_client.models.generate_content_stream(
+                model="gemini-2.5-flash",
+                contents=f"Take the provided pseudo code and generate python code from this: \\n\\n {actual_pseudo_snippet}",
+                config=types.GenerateContentConfig(
+                    system_instruction=GEMINI_SYSTEM_INSTRUCTION,
+                    response_mime_type="application/json"
+                )
+            )
+
+        # Run Gemini call in thread
+        response = await asyncio.to_thread(run_stream)
+
+        # Collect JSON chunks
+        for chunk in response:
+            if chunk.text:
+                full_response += chunk.text
+                await asyncio.sleep(0)
+
+        # Clean markdown wrappers in case there are any, and safely extract json
+        cleaned_match = re.search(r"\\{.*\\}", full_response, re.DOTALL)
+        if not cleaned_match:
+            # Fallback to standard clean if the regex misses
+            cleaned = clean_llm_output(full_response)
+        else:
+            cleaned = cleaned_match.group()
+
+        # Parse JSON safely
+        try:
+            parsed_json = json.loads(cleaned)
+            parsed_data = CodeFromPseudoCodeLLMResponseSchema(**parsed_json)
+        except Exception as parse_error:
+            raise ValueError(f"LLM returned invalid JSON: {cleaned}") from parse_error
+
+        # -------------------------
+        # SAVE TO DATABASE FIRST
+        # -------------------------
+        new_code_output = PseudoCodeToCodeModel(
+            title=parsed_data.title,
+            pseudo_code=parsed_data.pseudo_code,
+            actual_code=parsed_data.actual_code
+        )
+
+        db.add(new_code_output)
+        print("Saving pseudo code generated actual code snippet to DB...")
+        await db.commit()
+        await db.refresh(new_code_output)
+        print("Saved snippet:", new_code_output.id)
+
+        # -------------------------
+        # STREAM EXPLANATION
+        # -------------------------
+        generated_code_text = parsed_data.actual_code
+
+        for word in generated_code_text.split(" "):
+            yield f"data: {word} "
+            await asyncio.sleep(0.015)
+
+        yield "data: [DONE]\\n\\n"
+
+    except Exception as e:
+        await db.rollback()
+        error_message = f"Streaming error: {str(e)}"
+        print(error_message)
+        yield f"data: ERROR: {error_message}\\n\\n"
